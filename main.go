@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
 	"html/template"
 	"log"
@@ -12,7 +13,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Struktury danych do widoku
+// WBUDOWANIE PLIKÓW DO ŚRODKA EXECUTABLE:
+//
+//go:embed index.html script.js
+var embeddedFiles embed.FS
+
 type DashboardData struct {
 	CurrentTab     string
 	Categories     []string
@@ -28,10 +33,10 @@ type DashboardData struct {
 type StatsData struct {
 	ItemsBought   int
 	ItemsSold     int
-	TotalRevenue  float64 // Przychód
-	TotalClothes  float64 // Wydatki na ubrania
-	TotalPackages float64 // Wydatki na pakowanie
-	Profit        float64 // Zysk
+	TotalRevenue  float64
+	TotalClothes  float64
+	TotalPackages float64
+	Profit        float64
 }
 
 type InventoryItem struct {
@@ -62,7 +67,6 @@ func initDB() {
 		log.Fatal(err)
 	}
 
-	// 1. Istniejące tabele
 	db.Exec(`CREATE TABLE IF NOT EXISTS purchase_groups (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		total_price REAL,
@@ -82,25 +86,22 @@ func initDB() {
 		sold_at DATETIME
 	);`)
 
-	// Migracja: dodanie kolumny category, jeśli nie istnieje
 	_, err = db.Exec(`SELECT category FROM inventory_items LIMIT 1`)
 	if err != nil {
 		db.Exec(`ALTER TABLE inventory_items ADD COLUMN category TEXT DEFAULT 'Inne'`)
 	}
 
-	// 2. Nowa tabela Kategorii
 	db.Exec(`CREATE TABLE IF NOT EXISTS categories (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT UNIQUE
 	);`)
-	// Inicjalizacja domyślnych kategorii
+
 	var count int
 	db.QueryRow(`SELECT COUNT(*) FROM categories`).Scan(&count)
 	if count == 0 {
 		db.Exec(`INSERT INTO categories (name) VALUES ('Sukienka'), ('T-shirt'), ('Spodnie'), ('Bluza'), ('Buty'), ('Inne')`)
 	}
 
-	// 3. Nowa tabela Opakowań
 	db.Exec(`CREATE TABLE IF NOT EXISTS packaging (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT,
@@ -116,13 +117,13 @@ func main() {
 	defer db.Close()
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("index.html")
+		// Ładowanie szablonu z wbudowanej pamięci (embed)
+		tmpl, err := template.ParseFS(embeddedFiles, "index.html")
 		if err != nil {
-			http.Error(w, "Nie można załadować pliku index.html", http.StatusInternalServerError)
+			http.Error(w, "Nie można załadować wbudowanego pliku index.html: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		// Ustawienia dat dla statystyk (domyślnie obecny miesiąc)
 		now := time.Now()
 		fromStr := r.URL.Query().Get("from")
 		toStr := r.URL.Query().Get("to")
@@ -144,7 +145,6 @@ func main() {
 			ToDate:     toStr,
 		}
 
-		// 1. Pobieranie Kategorii
 		rowsCat, _ := db.Query(`SELECT name FROM categories ORDER BY name`)
 		for rowsCat.Next() {
 			var cat string
@@ -153,7 +153,6 @@ func main() {
 		}
 		rowsCat.Close()
 
-		// 2. Pobieranie Opakowań i obliczanie średniej
 		rowsPkg, _ := db.Query(`SELECT id, name, total_price, quantity, unit_price FROM packaging ORDER BY id DESC`)
 		var sumPkgPrice float64
 		var sumPkgQty int
@@ -169,7 +168,6 @@ func main() {
 			data.AvgPackageCost = sumPkgPrice / float64(sumPkgQty)
 		}
 
-		// 3. Magazyn (Niesprzedane)
 		rowsItems, _ := db.Query(`SELECT id, name, category, color, size, brand FROM inventory_items WHERE status = 'in_stock'`)
 		for rowsItems.Next() {
 			var i InventoryItem
@@ -178,26 +176,14 @@ func main() {
 		}
 		rowsItems.Close()
 
-		// 4. STATYSTYKI W ZAKRESIE DAT
-		// Ilość kupionych
 		db.QueryRow(`SELECT COUNT(*) FROM inventory_items i JOIN purchase_groups g ON i.group_id = g.id WHERE DATE(g.created_at) >= ? AND DATE(g.created_at) <= ?`, fromStr, toStr).Scan(&data.Stats.ItemsBought)
-
-		// Ilość sprzedanych
 		db.QueryRow(`SELECT COUNT(*) FROM inventory_items WHERE status = 'sold' AND DATE(sold_at) >= ? AND DATE(sold_at) <= ?`, fromStr, toStr).Scan(&data.Stats.ItemsSold)
-
-		// Przychód ze sprzedaży
 		db.QueryRow(`SELECT COALESCE(SUM(sell_price), 0) FROM inventory_items WHERE status = 'sold' AND DATE(sold_at) >= ? AND DATE(sold_at) <= ?`, fromStr, toStr).Scan(&data.Stats.TotalRevenue)
-
-		// Wydatki na ubrania (grupy)
 		db.QueryRow(`SELECT COALESCE(SUM(total_price), 0) FROM purchase_groups WHERE DATE(created_at) >= ? AND DATE(created_at) <= ?`, fromStr, toStr).Scan(&data.Stats.TotalClothes)
-
-		// Wydatki na pakowanie
 		db.QueryRow(`SELECT COALESCE(SUM(total_price), 0) FROM packaging WHERE DATE(created_at) >= ? AND DATE(created_at) <= ?`, fromStr, toStr).Scan(&data.Stats.TotalPackages)
 
-		// Zysk
 		data.Stats.Profit = data.Stats.TotalRevenue - data.Stats.TotalClothes - data.Stats.TotalPackages
 
-		// Lista sprzedanych w zakresie
 		rowsSold, _ := db.Query(`SELECT name, category, brand, sell_price, DATE(sold_at) FROM inventory_items WHERE status = 'sold' AND DATE(sold_at) >= ? AND DATE(sold_at) <= ? ORDER BY sold_at DESC`, fromStr, toStr)
 		for rowsSold.Next() {
 			var i InventoryItem
@@ -209,7 +195,6 @@ func main() {
 		tmpl.Execute(w, data)
 	})
 
-	// Dodawanie ubrań
 	http.HandleFunc("/add_group", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			r.ParseForm()
@@ -228,9 +213,7 @@ func main() {
 			for i := range names {
 				if names[i] != "" {
 					cat := categories[i]
-					// Zapisz nową kategorię, jeśli jej nie ma
 					db.Exec("INSERT OR IGNORE INTO categories (name) VALUES (?)", cat)
-
 					db.Exec("INSERT INTO inventory_items (group_id, name, category, color, size, brand, status) VALUES (?, ?, ?, ?, ?, ?, 'in_stock')",
 						groupID, names[i], cat, colors[i], sizes[i], brands[i])
 				}
@@ -239,7 +222,6 @@ func main() {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 
-	// Sprzedaż
 	http.HandleFunc("/sell", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			r.ParseForm()
@@ -248,7 +230,6 @@ func main() {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 
-	// Dodawanie opakowań
 	http.HandleFunc("/add_packaging", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
 			r.ParseForm()
@@ -269,15 +250,23 @@ func main() {
 		http.Redirect(w, r, "/?tab=packaging", http.StatusSeeOther)
 	})
 
+	// Serwowanie pliku script.js z wbudowanej pamięci
 	http.HandleFunc("/script.js", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "script.js")
+		data, err := embeddedFiles.ReadFile("script.js")
+		if err != nil {
+			http.Error(w, "Nie znaleziono script.js", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write(data)
 	})
 
+	// Automatyczne odpalenie przeglądarki z zachowaniem widocznego okienka konsoli
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		exec.Command("cmd", "/c", "start", "http://localhost:8080").Start()
 	}()
 
-	log.Println("Serwer działa na http://localhost:8080")
+	log.Println("Serwer działa na http://localhost:8080. Zamknij to okno, aby wyłączyć aplikację.")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
