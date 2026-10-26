@@ -7,24 +7,49 @@
 	<style>
 		body {
 			font-family: sans-serif;
-			padding: 20px;
+			padding: 0;
+			margin: 0;
 			background: #f4f4f9;
 		}
 
-		.container {
-			max-width: 900px;
+		.navbar {
+			background: #333;
+			overflow: hidden;
+			padding: 0 20px;
 		}
 
-		.chart-container {
-			position: absolute;
-			top: 20px;
-			right: 20px;
-			width: 300px;
-			height: 300px;
-			background: white;
-			padding: 15px;
-			border-radius: 8px;
-			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+		.navbar button {
+			background: #333;
+			float: left;
+			border: none;
+			outline: none;
+			cursor: pointer;
+			padding: 14px 20px;
+			color: white;
+			font-size: 16px;
+		}
+
+		.navbar button:hover {
+			background: #555;
+		}
+
+		.navbar button.active {
+			background: #28a745;
+			font-weight: bold;
+		}
+
+		.container {
+			max-width: 1000px;
+			margin: 20px auto;
+			padding: 0 20px;
+		}
+
+		.tab-content {
+			display: none;
+		}
+
+		.tab-content.active {
+			display: block;
 		}
 
 		table {
@@ -43,7 +68,7 @@
 		}
 
 		th {
-			background: #333;
+			background: #444;
 			color: white;
 		}
 
@@ -63,6 +88,11 @@
 			font-size: 14px;
 		}
 
+		.btn-filter {
+			background: #17a2b8;
+			padding: 8px 15px;
+		}
+
 		.modal {
 			display: none;
 			position: fixed;
@@ -80,12 +110,13 @@
 			background: white;
 			padding: 20px;
 			border-radius: 8px;
-			width: 600px;
+			width: 800px;
 			max-height: 90vh;
 			overflow-y: auto;
 		}
 
-		.modal-content input {
+		.modal-content input,
+		.modal-content select {
 			padding: 8px;
 			box-sizing: border-box;
 		}
@@ -106,46 +137,209 @@
 			margin-bottom: 10px;
 		}
 
-		.item-row input {
+		.item-row input,
+		.item-row select {
 			flex: 1;
+		}
+
+		.stats-grid {
+			display: flex;
+			gap: 15px;
+			margin-bottom: 20px;
+			flex-wrap: wrap;
+		}
+
+		.stat-card {
+			background: white;
+			padding: 20px;
+			border-radius: 8px;
+			flex: 1;
+			min-width: 150px;
+			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+			text-align: center;
+			border-bottom: 4px solid #ddd;
+		}
+
+		.stat-card h3 {
+			margin: 0 0 10px 0;
+			font-size: 14px;
+			color: #666;
+		}
+
+		.stat-card .value {
+			font-size: 24px;
+			font-weight: bold;
+		}
+
+		.profit-card {
+			border-bottom-color: #28a745;
+		}
+
+		.loss-card {
+			border-bottom-color: #dc3545;
 		}
 	</style>
 </head>
 
 <body>
-	<div class="container">
-		<h1>Stan Magazynu</h1>
-		<button class="btn" onclick="openBuyModal()">+ Dodaj nową partię ubrań</button>
 
-		<table>
-			<tr>
-				<th>Nazwa</th>
-				<th>Kolor</th>
-				<th>Rozmiar</th>
-				<th>Marka</th>
-				<th>Akcje</th>
-			</tr>
-			{{range .Items}}
-			<tr>
-				<td>{{.Name}}</td>
-				<td>{{.Color}}</td>
-				<td>{{.Size}}</td>
-				<td>{{.Brand}}</td>
-				<td>
-					<button class="btn btn-sell" onclick="sellItem({{.ID}}, '{{.Name}}')">Sprzedaj</button>
-				</td>
-			</tr>
-			{{end}}
-		</table>
+	<div class="navbar">
+		<button class="tab-link" onclick="switchTab('dashboard')">Magazyn</button>
+		<button class="tab-link" onclick="switchTab('stats')">Statystyki Finansowe</button>
+		<button class="tab-link" onclick="switchTab('packaging')">Koszty Pakowania</button>
 	</div>
 
-	<div class="chart-container">
-		<h3 style="margin-top:0; text-align:center;">Finanse (PLN)</h3>
-		<canvas id="profitChart"></canvas>
-		<h4
-			style="text-align:center; color: {{if gt .Profit 0.0}}green{{else if lt .Profit 0.0}}red{{else}}black{{end}};">
-			Zysk netto: {{.Profit}} PLN
-		</h4>
+	<datalist id="categoriesList">
+		{{range .Categories}}
+		<option value="{{.}}">
+			{{end}}
+	</datalist>
+
+	<div class="container">
+
+		<div id="dashboard" class="tab-content">
+			<h1>Stan Magazynu (Aktualne)</h1>
+			<button class="btn" onclick="openBuyModal()">+ Dodaj nową partię ubrań</button>
+
+			<table>
+				<tr>
+					<th>Kategoria</th>
+					<th>Nazwa</th>
+					<th>Kolor</th>
+					<th>Rozmiar</th>
+					<th>Marka</th>
+					<th>Akcje</th>
+				</tr>
+				{{range .Items}}
+				<tr>
+					<td><b>{{.Category}}</b></td>
+					<td>{{.Name}}</td>
+					<td>{{.Color}}</td>
+					<td>{{.Size}}</td>
+					<td>{{.Brand}}</td>
+					<td>
+						<button class="btn btn-sell" onclick="sellItem({{.ID}}, '{{.Name}}')">Sprzedaj</button>
+					</td>
+				</tr>
+				{{end}}
+			</table>
+		</div>
+
+		<div id="stats" class="tab-content">
+			<h1>Statystyki i Historia</h1>
+
+			<div
+				style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+				<form id="statsForm" action="/" method="GET" style="display: flex; gap: 10px; align-items: center;">
+					<input type="hidden" name="tab" value="stats">
+					<b>Od:</b> <input type="date" name="from" value="{{.FromDate}}" id="dateFrom">
+					<b>Do:</b> <input type="date" name="to" value="{{.ToDate}}" id="dateTo">
+					<button type="submit" class="btn btn-filter">Pokaż z tego okresu</button>
+
+					<div style="margin-left:auto;">
+						<button type="button" onclick="setDateRange('week')" class="btn"
+							style="background:#6c757d; font-size:12px;">Bieżący Tydzień</button>
+						<button type="button" onclick="setDateRange('month')" class="btn"
+							style="background:#6c757d; font-size:12px;">Bieżący Miesiąc</button>
+					</div>
+				</form>
+			</div>
+
+			<div class="stats-grid">
+				<div class="stat-card">
+					<h3>Sztuki Kupione</h3>
+					<div class="value">{{.Stats.ItemsBought}}</div>
+				</div>
+				<div class="stat-card">
+					<h3>Sztuki Sprzedane</h3>
+					<div class="value">{{.Stats.ItemsSold}}</div>
+				</div>
+				<div class="stat-card">
+					<h3>Wydatki (Towar)</h3>
+					<div class="value" style="color:red">- {{.Stats.TotalClothes}} PLN</div>
+				</div>
+				<div class="stat-card">
+					<h3>Wydatki (Pakowanie)</h3>
+					<div class="value" style="color:red">- {{.Stats.TotalPackages}} PLN</div>
+				</div>
+				<div class="stat-card">
+					<h3>Przychód</h3>
+					<div class="value" style="color:green">+ {{.Stats.TotalRevenue}} PLN</div>
+				</div>
+				<div class="stat-card {{if gt .Stats.Profit 0.0}}profit-card{{else}}loss-card{{end}}">
+					<h3>Zysk Netto w tym okresie</h3>
+					<div class="value" style="{{if gt .Stats.Profit 0.0}}color:green{{else}}color:red{{end}}">
+						{{.Stats.Profit}} PLN</div>
+				</div>
+			</div>
+
+			<h2>Przedmioty sprzedane w tym okresie</h2>
+			<table>
+				<tr>
+					<th>Data Sprzedaży</th>
+					<th>Kategoria</th>
+					<th>Nazwa</th>
+					<th>Marka</th>
+					<th>Kwota</th>
+				</tr>
+				{{range .SoldItems}}
+				<tr>
+					<td>{{.SoldAt}}</td>
+					<td>{{.Category}}</td>
+					<td>{{.Name}}</td>
+					<td>{{.Brand}}</td>
+					<td style="color:green; font-weight:bold;">+ {{.SellPrice}} PLN</td>
+				</tr>
+				{{end}}
+			</table>
+		</div>
+
+		<div id="packaging" class="tab-content">
+			<h1>Materiały do pakowania</h1>
+			<p>Średni koszt zapakowania 1 przesyłki w Twoim systemie to:
+				<b style="font-size:20px; color:#007bff;">{{printf "%.2f" .AvgPackageCost}} PLN</b>
+			</p>
+
+			<div
+				style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+				<h3>Zarejestruj zakup materiałów (kartony, taśmy, foliopaki)</h3>
+				<form action="/add_packaging" method="POST" style="display:flex; gap:10px; align-items:flex-end;">
+					<div style="flex:2;">
+						<label>Nazwa towaru (np. Foliopaki 100szt):</label>
+						<input type="text" name="name" required style="width:100%; padding:8px;">
+					</div>
+					<div style="flex:1;">
+						<label>Łączna kwota (PLN):</label>
+						<input type="number" step="0.01" name="total_price" required style="width:100%; padding:8px;">
+					</div>
+					<div style="flex:1;">
+						<label>Na ile paczek to starczy?</label>
+						<input type="number" name="quantity" required style="width:100%; padding:8px;">
+					</div>
+					<button type="submit" class="btn">Dodaj koszt</button>
+				</form>
+			</div>
+
+			<h2>Historia zakupów opakowań</h2>
+			<table>
+				<tr>
+					<th>Data / ID</th>
+					<th>Nazwa</th>
+					<th>Zakupiono na szt.</th>
+					<th>Zapłacono (całość)</th>
+					<th>Cena za 1 paczkę</th>
+				</tr>
+				{{range .Packages}}
+				<tr>
+					<td>#{{.ID}}</td>
+					<td>{{.Name}}</td>
+					<td>{{.Quantity}} szt</td>
+					<td style="color:red">- {{.TotalPrice}} PLN</td>
+					<td>{{printf "%.2f" .UnitPrice}} PLN / szt</td>
+				</tr>
+				{{end}}
+			</table>
+		</div>
 	</div>
 
 	<div id="buyModal" class="modal">
@@ -170,7 +364,8 @@
 				<h3>Rzeczy w tej partii:</h3>
 				<div id="itemsContainer">
 					<div class="item-row">
-						<input type="text" name="name" placeholder="Nazwa (np. T-shirt)" required>
+						<input list="categoriesList" name="category" placeholder="Kategoria (Wybierz/Wpisz)" required>
+						<input type="text" name="name" placeholder="Nazwa" required>
 						<input type="text" name="color" placeholder="Kolor">
 						<input type="text" name="size" placeholder="Rozmiar">
 						<input type="text" name="brand" placeholder="Marka">
@@ -180,7 +375,8 @@
 				<button type="button" class="btn" style="background:#17a2b8; margin-bottom: 20px;"
 					onclick="addItemRow()">+ Dodaj kolejną rzecz do listy</button>
 
-				<button class="btn" type="submit" style="width:100%;">Zapisz do magazynu</button>
+				<button class="btn" type="submit" style="width:100%; font-size:18px; padding: 15px;">Zapisz całą partię
+					do magazynu</button>
 			</form>
 		</div>
 	</div>
@@ -190,50 +386,7 @@
 		<input type="hidden" name="sell_price" id="sell_price">
 	</form>
 
-	<script>
-		function openBuyModal() { document.getElementById('buyModal').style.display = 'flex'; }
-		function closeBuyModal() { document.getElementById('buyModal').style.display = 'none'; }
-
-		function addItemRow() {
-			const container = document.getElementById('itemsContainer');
-			const row = document.createElement('div');
-			row.className = 'item-row';
-			row.innerHTML = `
-				<input type="text" name="name" placeholder="Nazwa" required>
-				<input type="text" name="color" placeholder="Kolor">
-				<input type="text" name="size" placeholder="Rozmiar">
-				<input type="text" name="brand" placeholder="Marka">
-				<button type="button" onclick="this.parentElement.remove()" style="background:#dc3545; color:white; border:none; cursor:pointer; border-radius:4px; padding: 0 15px;">X</button>
-			`;
-			container.appendChild(row);
-		}
-
-		function sellItem(id, name) {
-			let price = prompt("Czy na pewno chcesz sprzedać produkt: " + name + "?\nJeśli tak, wpisz za ile został sprzedany (PLN):");
-			if (price !== null && price.trim() !== "") {
-				let numPrice = parseFloat(price.replace(',', '.'));
-				if (!isNaN(numPrice)) {
-					document.getElementById('sell_item_id').value = id;
-					document.getElementById('sell_price').value = numPrice;
-					document.getElementById('sellForm').submit();
-				} else {
-					alert("Błąd: Podano nieprawidłową kwotę.");
-				}
-			}
-		}
-
-		var ctx = document.getElementById('profitChart').getContext('2d');
-		new Chart(ctx, {
-			type: 'doughnut',
-			data: {
-				labels: ['Koszty ubrań', 'Przychód ze sprzedaży'],
-				datasets: [{
-					data: [{{.TotalSpent }}, {{.TotalEarned }}],
-			backgroundColor: ['#dc3545', '#28a745']
-		}]
-			}
-		});
-	</script>
+	<script src="/script.js"></script>
 </body>
 
 </html>
