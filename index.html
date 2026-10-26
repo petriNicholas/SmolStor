@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>SmolStor Dashboard</title>
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<style>
+		body {
+			font-family: sans-serif;
+			padding: 20px;
+			background: #f4f4f9;
+		}
+
+		.container {
+			max-width: 900px;
+		}
+
+		.chart-container {
+			position: absolute;
+			top: 20px;
+			right: 20px;
+			width: 300px;
+			height: 300px;
+			background: white;
+			padding: 15px;
+			border-radius: 8px;
+			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			background: white;
+			margin-top: 20px;
+			box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+		}
+
+		th,
+		td {
+			border-bottom: 1px solid #ddd;
+			padding: 12px;
+			text-align: left;
+		}
+
+		th {
+			background: #333;
+			color: white;
+		}
+
+		.btn {
+			background: #28a745;
+			color: white;
+			padding: 10px 15px;
+			border: none;
+			cursor: pointer;
+			border-radius: 4px;
+			font-size: 16px;
+		}
+
+		.btn-sell {
+			background: #007bff;
+			padding: 6px 12px;
+			font-size: 14px;
+		}
+
+		.modal {
+			display: none;
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: rgba(0, 0, 0, 0.5);
+			justify-content: center;
+			align-items: center;
+			z-index: 100;
+		}
+
+		.modal-content {
+			background: white;
+			padding: 20px;
+			border-radius: 8px;
+			width: 600px;
+			max-height: 90vh;
+			overflow-y: auto;
+		}
+
+		.modal-content input {
+			padding: 8px;
+			box-sizing: border-box;
+		}
+
+		.close-btn {
+			background: #dc3545;
+			color: white;
+			padding: 5px 10px;
+			border: none;
+			cursor: pointer;
+			float: right;
+			border-radius: 4px;
+		}
+
+		.item-row {
+			display: flex;
+			gap: 5px;
+			margin-bottom: 10px;
+		}
+
+		.item-row input {
+			flex: 1;
+		}
+	</style>
+</head>
+
+<body>
+	<div class="container">
+		<h1>Stan Magazynu</h1>
+		<button class="btn" onclick="openBuyModal()">+ Dodaj nową partię ubrań</button>
+
+		<table>
+			<tr>
+				<th>Nazwa</th>
+				<th>Kolor</th>
+				<th>Rozmiar</th>
+				<th>Marka</th>
+				<th>Akcje</th>
+			</tr>
+			{{range .Items}}
+			<tr>
+				<td>{{.Name}}</td>
+				<td>{{.Color}}</td>
+				<td>{{.Size}}</td>
+				<td>{{.Brand}}</td>
+				<td>
+					<button class="btn btn-sell" onclick="sellItem({{.ID}}, '{{.Name}}')">Sprzedaj</button>
+				</td>
+			</tr>
+			{{end}}
+		</table>
+	</div>
+
+	<div class="chart-container">
+		<h3 style="margin-top:0; text-align:center;">Finanse (PLN)</h3>
+		<canvas id="profitChart"></canvas>
+		<h4
+			style="text-align:center; color: {{if gt .Profit 0.0}}green{{else if lt .Profit 0.0}}red{{else}}black{{end}};">
+			Zysk netto: {{.Profit}} PLN
+		</h4>
+	</div>
+
+	<div id="buyModal" class="modal">
+		<div class="modal-content">
+			<button class="close-btn" onclick="closeBuyModal()">X</button>
+			<h2>Nowa dostawa (Grupa ubrań)</h2>
+			<form action="/add_group" method="POST">
+				<div
+					style="display:flex; gap:15px; margin-bottom:20px; background:#f8f9fa; padding:15px; border-radius:5px; border: 1px solid #ddd;">
+					<div style="flex:1;">
+						<b>Cena za CAŁOŚĆ (PLN):</b><br>
+						<input type="number" step="0.01" name="group_price" required
+							style="width:100%; margin-top:5px;">
+					</div>
+					<div style="flex:1;">
+						<b>Gdzie kupione (opcjonalnie):</b><br>
+						<input type="text" name="source" placeholder="np. Vinted, Lumpeks..."
+							style="width:100%; margin-top:5px;">
+					</div>
+				</div>
+
+				<h3>Rzeczy w tej partii:</h3>
+				<div id="itemsContainer">
+					<div class="item-row">
+						<input type="text" name="name" placeholder="Nazwa (np. T-shirt)" required>
+						<input type="text" name="color" placeholder="Kolor">
+						<input type="text" name="size" placeholder="Rozmiar">
+						<input type="text" name="brand" placeholder="Marka">
+					</div>
+				</div>
+
+				<button type="button" class="btn" style="background:#17a2b8; margin-bottom: 20px;"
+					onclick="addItemRow()">+ Dodaj kolejną rzecz do listy</button>
+
+				<button class="btn" type="submit" style="width:100%;">Zapisz do magazynu</button>
+			</form>
+		</div>
+	</div>
+
+	<form id="sellForm" action="/sell" method="POST" style="display:none;">
+		<input type="hidden" name="item_id" id="sell_item_id">
+		<input type="hidden" name="sell_price" id="sell_price">
+	</form>
+
+	<script>
+		function openBuyModal() { document.getElementById('buyModal').style.display = 'flex'; }
+		function closeBuyModal() { document.getElementById('buyModal').style.display = 'none'; }
+
+		function addItemRow() {
+			const container = document.getElementById('itemsContainer');
+			const row = document.createElement('div');
+			row.className = 'item-row';
+			row.innerHTML = `
+				<input type="text" name="name" placeholder="Nazwa" required>
+				<input type="text" name="color" placeholder="Kolor">
+				<input type="text" name="size" placeholder="Rozmiar">
+				<input type="text" name="brand" placeholder="Marka">
+				<button type="button" onclick="this.parentElement.remove()" style="background:#dc3545; color:white; border:none; cursor:pointer; border-radius:4px; padding: 0 15px;">X</button>
+			`;
+			container.appendChild(row);
+		}
+
+		function sellItem(id, name) {
+			let price = prompt("Czy na pewno chcesz sprzedać produkt: " + name + "?\nJeśli tak, wpisz za ile został sprzedany (PLN):");
+			if (price !== null && price.trim() !== "") {
+				let numPrice = parseFloat(price.replace(',', '.'));
+				if (!isNaN(numPrice)) {
+					document.getElementById('sell_item_id').value = id;
+					document.getElementById('sell_price').value = numPrice;
+					document.getElementById('sellForm').submit();
+				} else {
+					alert("Błąd: Podano nieprawidłową kwotę.");
+				}
+			}
+		}
+
+		var ctx = document.getElementById('profitChart').getContext('2d');
+		new Chart(ctx, {
+			type: 'doughnut',
+			data: {
+				labels: ['Koszty ubrań', 'Przychód ze sprzedaży'],
+				datasets: [{
+					data: [{{.TotalSpent }}, {{.TotalEarned }}],
+			backgroundColor: ['#dc3545', '#28a745']
+		}]
+			}
+		});
+	</script>
+</body>
+
+</html>
